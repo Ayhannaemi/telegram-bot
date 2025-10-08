@@ -1,28 +1,18 @@
-from flask import Flask, request
+from flask import Flask, request, redirect
 import requests
-import os
 
-# -------------------------------
-# تنظیمات ربات
-# -------------------------------
 TOKEN = "8094291923:AAENXpm4aBXhIjIUx6_4tKuCKsiwmh9ssc8"
 URL = f"https://api.telegram.org/bot{TOKEN}/"
-ADMIN_ID = 1026455806  # آیدی عددی خودت
+ADMIN_ID = 1026455806
 
-# -------------------------------
-# تنظیمات زرین‌پال
-# -------------------------------
 ZARINPAL_MERCHANT = "d2678987-059b-4550-b1d8-09cb67883cf9"
 ZARINPAL_REQUEST = "https://api.zarinpal.com/pg/v4/payment/request.json"
 ZARINPAL_VERIFY = "https://api.zarinpal.com/pg/v4/payment/verify.json"
 ZARINPAL_START = "https://www.zarinpal.com/pg/StartPay/"
 
-# -------------------------------
-# اپلیکیشن و دیتاست
-# -------------------------------
 app = Flask(__name__)
-user_states = {}          # برای فرم سفارش
-pending_payments = {}     # chat_id: service_id
+user_states = {}
+pending_payments = {}  # chat_id: service_id
 
 SERVICE_PRICES = {
     "web": 3000000,
@@ -30,9 +20,6 @@ SERVICE_PRICES = {
     "uiux": 1500000
 }
 
-# -------------------------------
-# ارسال پیام به کاربر
-# -------------------------------
 def send_message(chat_id, text, buttons=None, keyboard=None):
     payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
     if buttons:
@@ -45,13 +32,9 @@ def send_message(chat_id, text, buttons=None, keyboard=None):
         }
     requests.post(URL + "sendMessage", json=payload)
 
-# -------------------------------
-# ایجاد لینک پرداخت
-# -------------------------------
 def create_payment_link(chat_id, service_id):
     amount = SERVICE_PRICES[service_id]
-    # جایگزین کردن دامنه واقعی خودت
-    callback_url = f"https://YOUR_DOMAIN.com/verify/{chat_id}"
+    callback_url = f"https://arenapc.shop/verify/{chat_id}"  # دامنه واقعی
     data = {
         "merchant_id": ZARINPAL_MERCHANT,
         "amount": amount,
@@ -66,9 +49,6 @@ def create_payment_link(chat_id, service_id):
     else:
         return None
 
-# -------------------------------
-# وبهوک اصلی ربات
-# -------------------------------
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
     data = request.get_json()
@@ -86,7 +66,6 @@ def webhook():
             ["🧾 سفارش جدید"]
         ]
 
-        # فرم سفارش
         if chat_id in user_states:
             state = user_states[chat_id]
             if state["step"] == "name":
@@ -113,7 +92,6 @@ def webhook():
                 del user_states[chat_id]
             return "ok"
 
-        # دستورات عمومی
         if text == "/start":
             send_message(chat_id, "👋 سلام! خوش اومدی به <b>Arena PC</b>.\nاز منوی پایین یکی از گزینه‌ها رو انتخاب کن 👇",
                          keyboard=main_keyboard)
@@ -154,9 +132,6 @@ def webhook():
 
     return "ok"
 
-# -------------------------------
-# تایید پرداخت
-# -------------------------------
 @app.route("/verify/<int:chat_id>")
 def verify(chat_id):
     if chat_id not in pending_payments:
@@ -185,4 +160,4 @@ def home():
     return "🤖 Arena PC Bot is running!"
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    app.run(host="0.0.0.0", port=5000)
