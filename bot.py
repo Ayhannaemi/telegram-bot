@@ -4,89 +4,142 @@ import os
 
 TOKEN = "8094291923:AAENXpm4aBXhIjIUx6_4tKuCKsiwmh9ssc8"
 URL = f"https://api.telegram.org/bot{TOKEN}/"
+ADMIN_ID = 1026455806  # آیدی عددی خودت
 
 app = Flask(__name__)
 
-# -----------------------------
-# تابع ارسال پیام به کاربر
-# -----------------------------
-def send_message(chat_id, text):
-    requests.post(URL + "sendMessage", data={"chat_id": chat_id, "text": text})
+# برای نگه‌داری وضعیت هر کاربر
+user_states = {}
 
-# -----------------------------
-# پاسخ به پیام‌های کاربران
-# -----------------------------
+def send_message(chat_id, text, buttons=None, keyboard=None):
+    payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
+
+    if buttons:
+        payload["reply_markup"] = {"inline_keyboard": buttons}
+    elif keyboard:
+        payload["reply_markup"] = {
+            "keyboard": keyboard,
+            "resize_keyboard": True,
+            "one_time_keyboard": False
+        }
+
+    requests.post(URL + "sendMessage", json=payload)
+
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
     data = request.get_json()
-    if not data or "message" not in data:
+    if not data:
         return "ok"
 
-    chat_id = data["message"]["chat"]["id"]
-    text = data["message"].get("text", "").lower()
+    if "message" in data:
+        chat_id = data["message"]["chat"]["id"]
+        text = data["message"].get("text", "").strip()
+        username = data["message"]["from"].get("username", "ناشناخته")
 
-    if text == "/start":
-        send_message(chat_id, "👋 سلام! خوش اومدی به ربات Arena PC.\n"
-                              "برای دیدن خدمات، دستور /services رو بفرست ✨")
+        main_keyboard = [
+            ["💻 خدمات", "💰 تعرفه‌ها"],
+            ["📞 ارتباط با ما", "📂 نمونه کارها"],
+            ["🧾 سفارش جدید"]
+        ]
 
-    elif text == "/services":
-        send_message(chat_id, "📋 خدمات ما:\n"
-                              "1️⃣ طراحی و پشتیبانی وب‌سایت\n"
-                              "2️⃣ طراحی اپلیکیشن موبایل\n"
-                              "3️⃣ رابط کاربری (UI/UX)\n"
-                              "4️⃣ پروژه‌های پایتون، جاوااسکریپت و وردپرس\n"
-                              "5️⃣ فروش و تعمیر لپ‌تاپ و لوازم جانبی\n\n"
-                              "برای جزئیات بیشتر: /price")
+        # اگر در حال پر کردن فرم هست
+        if chat_id in user_states:
+            state = user_states[chat_id]
 
-    elif text == "/price":
-        send_message(chat_id, "💰 تعرفه‌ها:\n"
-                              "🔹 طراحی سایت از ۳ میلیون تومان\n"
-                              "🔹 طراحی اپلیکیشن از ۵ میلیون تومان\n"
-                              "🔹 پشتیبانی سایت ماهیانه از ۵۰۰ هزار تومان\n"
-                              "🔹 پروژه دانشجویی از ۳۵۰ هزار تومان به بالا\n\n"
-                              "برای سفارش، دستور /order رو بفرست.")
+            if state["step"] == "name":
+                state["name"] = text
+                state["step"] = "phone"
+                send_message(chat_id, "📞 لطفاً شماره تماس خود را وارد کنید:")
 
-    elif text == "/order":
-        send_message(chat_id, "🧾 برای ثبت سفارش لطفاً موارد زیر را ارسال کنید:\n"
-                              "1️⃣ نوع پروژه (مثلاً سایت یا اپ)\n"
-                              "2️⃣ توضیح کوتاه درباره نیازت\n"
-                              "3️⃣ زمان‌بندی مدنظر\n\n"
-                              "📨 بعد از ارسال، با شما تماس می‌گیریم.\n"
-                              "پشتیبانی: @Arena_Suppoort")
+            elif state["step"] == "phone":
+                state["phone"] = text
+                state["step"] = "project"
+                send_message(chat_id, "🧠 نوع پروژه‌تان را بنویسید (مثلاً طراحی سایت یا اپلیکیشن):")
 
-    elif text == "/portfolio":
-        send_message(chat_id, "📂 نمونه کارها:\n"
-                              "🌐 arenapc.ir\n"
-                              "💼 instagram.com/arena_pc\n\n"
-                              "برای سفارش اختصاصی: /order")
+            elif state["step"] == "project":
+                state["project"] = text
+                send_message(chat_id, "✅ ممنون! اطلاعات شما ثبت شد.\n"
+                                      "همکاران ما به زودی با شما تماس می‌گیرند 🙏",
+                             keyboard=main_keyboard)
 
-    elif text == "/about":
-        send_message(chat_id, "🏢 درباره ما:\n"
-                              "ArenaPC مجموعه‌ای از طراحان و برنامه‌نویسانه که روی پروژه‌های وب، اپلیکیشن و سیستم‌های هوشمند کار می‌کنن.\n"
-                              "🎯 هدف ما، ترکیب خلاقیت با تکنولوژی‌ست.")
+                # ارسال اطلاعات به ادمین
+                message = (
+                    "📩 سفارش جدید دریافت شد:\n\n"
+                    f"👤 نام: {state['name']}\n"
+                    f"📞 شماره: {state['phone']}\n"
+                    f"💼 پروژه: {state['project']}\n"
+                    f"🔗 کاربر: @{username}"
+                )
+                send_message(ADMIN_ID, message)
 
-    elif text == "/contact":
-        send_message(chat_id, "📞 راه‌های ارتباط:\n"
-                              "Telegram: @Arena_Suppoort\n"
-                              "Instagram: @arena_pc\n"
-                              "Website: arenapc.ir")
+                del user_states[chat_id]
 
-    elif text == "/kolye":
-        send_message(chat_id, "💎 قیمت کلیه لپ‌تاپ‌ها از ۸۰۰ هزار تومان به بالا هست.\n"
-                              "برای دیدن موجودی روز، به @Arena_Suppoort پیام بده.")
+            return "ok"
 
-    else:
-        send_message(chat_id, "❓ دستور ناشناخته!\n"
-                              "از /start استفاده کن تا لیست دستورات رو ببینی.")
+        # دستورات عمومی
+        if text == "/start":
+            send_message(chat_id,
+                         "👋 سلام! خوش اومدی به <b>Arena PC</b>.\n"
+                         "از منوی پایین یکی از گزینه‌ها رو انتخاب کن 👇",
+                         keyboard=main_keyboard)
+
+        elif text == "🧾 سفارش جدید":
+            user_states[chat_id] = {"step": "name"}
+            send_message(chat_id, "🧾 لطفاً نام و نام خانوادگی خود را وارد کنید:")
+
+        elif text == "💻 خدمات":
+            buttons = [
+                [{"text": "🌐 طراحی سایت", "callback_data": "web"}],
+                [{"text": "📱 اپلیکیشن موبایل", "callback_data": "app"}],
+                [{"text": "🎨 رابط کاربری (UI/UX)", "callback_data": "uiux"}],
+            ]
+            send_message(chat_id, "📋 لیست خدمات ما:", buttons=buttons)
+
+        elif text == "💰 تعرفه‌ها":
+            send_message(chat_id, "💵 تعرفه خدمات:\n"
+                                  "🔹 طراحی سایت از ۳ میلیون تومان\n"
+                                  "🔹 اپلیکیشن موبایل از ۵ میلیون تومان\n"
+                                  "🔹 رابط کاربری از ۱.۵ میلیون تومان")
+
+        elif text == "📞 ارتباط با ما":
+            send_message(chat_id, "📞 راه‌های ارتباط:\n"
+                                  "Telegram: @Arena_Suppoort\n"
+                                  "Instagram: @arena_pc\n"
+                                  "Website: arenapc.ir")
+
+        elif text == "📂 نمونه کارها":
+            send_message(chat_id, "📂 نمونه کارها:\n"
+                                  "🌐 arenapc.ir\n"
+                                  "💼 instagram.com/arena_pc")
+
+        else:
+            send_message(chat_id, "❓ دستور ناشناخته! از منوی پایین استفاده کن.", keyboard=main_keyboard)
+
+    elif "callback_query" in data:
+        query = data["callback_query"]
+        chat_id = query["message"]["chat"]["id"]
+        data_id = query["data"]
+
+        if data_id == "web":
+            send_message(chat_id, "🌐 طراحی سایت شامل:\n"
+                                  "✅ سایت فروشگاهی\n✅ سایت شخصی\n✅ سایت شرکتی\n\n"
+                                  "برای سفارش پیام بده به @Arena_Suppoort")
+        elif data_id == "app":
+            send_message(chat_id, "📱 طراحی اپلیکیشن موبایل اندروید و iOS\n"
+                                  "با پنل مدیریت و طراحی اختصاصی UI.\n"
+                                  "برای سفارش پیام بده به @Arena_Suppoort")
+        elif data_id == "uiux":
+            send_message(chat_id, "🎨 طراحی رابط کاربری (UI/UX) مدرن و کاربرپسند\n"
+                                  "مخصوص اپلیکیشن‌ها و وب‌سایت‌ها.\n"
+                                  "برای مشاوره رایگان پیام بده: @Arena_Suppoort")
+
+        requests.post(URL + "answerCallbackQuery", json={"callback_query_id": query["id"]})
 
     return "ok"
 
-# -----------------------------
-# صفحه تست
-# -----------------------------
 @app.route("/")
 def home():
-    return "🤖 Telegram Bot is running!"
+    return "🤖 Arena PC Bot is running!"
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
