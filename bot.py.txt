@@ -1,0 +1,241 @@
+# -*- coding: utf-8 -*-
+"""
+ربات تلگرام برای نمایش و دریافت سفارش‌های خدمات طراحی و برنامه‌نویسی
+مناسب برای اجرا روی Render یا سرور شخصی
+"""
+
+import logging
+import sqlite3
+from aiogram import Bot, Dispatcher, executor, types
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.dispatcher import FSMContext
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from aiogram.dispatcher.filters.state import State, StatesGroup
+
+# ----- تنظیمات اولیه -----
+BOT_TOKEN = "8094291923:AAENXpm4aBXhIjIUx6_4tKuCKsiwmh9ssc8"
+ADMIN_ID = 1026455806
+DB_PATH = "orders.db"
+
+logging.basicConfig(level=logging.INFO)
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher(bot, storage=MemoryStorage())
+
+# ----- ایجاد دیتابیس -----
+conn = sqlite3.connect(DB_PATH)
+c = conn.cursor()
+c.execute('''
+CREATE TABLE IF NOT EXISTS orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    username TEXT,
+    full_name TEXT,
+    service TEXT,
+    details TEXT,
+    status TEXT DEFAULT 'جدید',
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+)
+''')
+conn.commit()
+conn.close()
+
+# ----- وضعیت‌ها برای FSM -----
+class OrderStates(StatesGroup):
+    choosing_service = State()
+    typing_details = State()
+
+# ----- کیبورد اصلی -----
+kb_main = ReplyKeyboardMarkup(resize_keyboard=True)
+kb_main.add(KeyboardButton('/services'))
+kb_main.add(KeyboardButton('/portfolio'))
+kb_main.add(KeyboardButton('/pricing'))
+kb_main.add(KeyboardButton('/order'))
+kb_main.add(KeyboardButton('/contact'))
+kb_main.add(KeyboardButton('/faq'))
+
+# ----- دیتا نمونه -----
+SERVICES = [
+    ("طراحی سایت ساده (1 صفحه)", "طراحی سایت یک‌صفحه‌ای با HTML/CSS و واکنش‌گرایی"),
+    ("سایت فروشگاهی پایه", "وب‌سایت فروشگاهی با ووکامرس یا راه‌حل ساده"),
+    ("طراحی اپ موبایل (پرِتو تایپ)", "طراحی رابط کاربری و پروتوتایپ اپ موبایل"),
+    ("برنامه‌نویسی سفارشی", "پیاده‌سازی بک‌اند یا اسکریپت‌های سفارشی")
+]
+
+PORTFOLIO = [
+    ("پروژه A", "سایت شرکتی، HTML/CSS/JS"),
+    ("پروژه B", "فروشگاه آنلاین با وردپرس"),
+]
+
+PRICING_TEXT = (
+    "قیمت‌ها حدودی و بسته به نیاز دقیق شما تغییر می‌کنند:\n"
+    "- طراحی یک صفحه‌ای: از 2,000,000 تومان\n"
+    "- فروشگاه پایه: از 8,000,000 تومان\n"
+    "- اپ موبایل (UI): از 4,000,000 تومان\n"
+    "برای قیمت دقیق لطفاً /order را بزنید و جزئیات پروژه را ارسال کنید."
+)
+
+FAQ_TEXT = (
+    "سوالات متداول:\n"
+    "1) زمان تحویل چقدر است؟ -> بستگی به پروژه دارد؛ معمولاً 1 تا 4 هفته.\n"
+    "2) پرداخت چطور انجام می‌شود؟ -> پیش‌پرداخت توافقی، مابقی بعد از تحویل یا طبق توافق.\n"
+)
+
+CONTACT_TEXT = (
+    "برای ارتباط مستقیم:\n"
+    "- ایمیل: your-email@example.com\n"
+    "- تلگرام: @yourusername\n"
+    "همچنین می‌توانید با /order سفارش ثبت کنید تا بررسی شود."
+)
+
+# ----- هندلرها -----
+@dp.message_handler(commands=['start', 'help'])
+async def cmd_start(message: types.Message):
+    text = (
+        f"سلام {message.from_user.full_name}!\n"
+        "من ربات خدمات طراحی و برنامه‌نویسی هستم. از منو استفاده کنید یا یکی از دستورات زیر را بزنید:\n"
+        "/services - مشاهده خدمات\n"
+        "/portfolio - نمونه‌کارها\n"
+        "/pricing - قیمت‌ها\n"
+        "/order - ثبت سفارش\n"
+        "/contact - تماس\n"
+        "/faq - سوالات متداول\n"
+    )
+    await message.reply(text, reply_markup=kb_main)
+
+@dp.message_handler(commands=['services'])
+async def cmd_services(message: types.Message):
+    kb = InlineKeyboardMarkup()
+    for idx, (title, desc) in enumerate(SERVICES):
+        kb.add(InlineKeyboardButton(title, callback_data=f'service_{idx}'))
+    await message.answer("خدمات ما:", reply_markup=kb)
+
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith('service_'))
+async def process_service_callback(callback_query: types.CallbackQuery):
+    idx = int(callback_query.data.split('_')[1])
+    title, desc = SERVICES[idx]
+    await bot.answer_callback_query(callback_query.id)
+    await bot.send_message(callback_query.from_user.id, f"{title}\n\n{desc}")
+
+@dp.message_handler(commands=['portfolio'])
+async def cmd_portfolio(message: types.Message):
+    text = "نمونه‌کارها:\n"
+    for title, desc in PORTFOLIO:
+        text += f"- {title}: {desc}\n"
+    await message.answer(text)
+
+@dp.message_handler(commands=['pricing'])
+async def cmd_pricing(message: types.Message):
+    await message.answer(PRICING_TEXT)
+
+@dp.message_handler(commands=['faq'])
+async def cmd_faq(message: types.Message):
+    await message.answer(FAQ_TEXT)
+
+@dp.message_handler(commands=['contact'])
+async def cmd_contact(message: types.Message):
+    await message.answer(CONTACT_TEXT)
+
+@dp.message_handler(commands=['order'])
+async def cmd_order(message: types.Message):
+    kb = InlineKeyboardMarkup()
+    for idx, (title, _) in enumerate(SERVICES):
+        kb.add(InlineKeyboardButton(title, callback_data=f'order_service_{idx}'))
+    kb.add(InlineKeyboardButton('مشخصات کامل پروژه را وارد می‌کنم', callback_data='order_custom'))
+    await message.answer('کدام سرویس را می‌خواهید سفارش دهید؟', reply_markup=kb)
+
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith('order_service_'))
+async def order_choose_service(callback_query: types.CallbackQuery):
+    idx = int(callback_query.data.split('_')[-1])
+    service_title = SERVICES[idx][0]
+    await bot.answer_callback_query(callback_query.id)
+    await bot.send_message(callback_query.from_user.id, f"شما {service_title} را انتخاب کردید. لطفاً جزئیات پروژه (نیاز‌ها، زمان تقریبی، بودجه تقریبی) را ارسال کنید.")
+    state = dp.current_state(user=callback_query.from_user.id)
+    await state.update_data(service=service_title)
+    await OrderStates.typing_details.set()
+
+@dp.callback_query_handler(lambda c: c.data == 'order_custom')
+async def order_custom(callback_query: types.CallbackQuery):
+    await bot.answer_callback_query(callback_query.id)
+    await bot.send_message(callback_query.from_user.id, 'لطفاً جزئیات کامل پروژه را بنویسید (نوع پروژه، امکانات، زمان، بودجه).')
+    state = dp.current_state(user=callback_query.from_user.id)
+    await state.update_data(service='سفارشی')
+    await OrderStates.typing_details.set()
+
+@dp.message_handler(state=OrderStates.typing_details, content_types=types.ContentTypes.TEXT)
+async def process_order_details(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    service = data.get('service', '—')
+    details = message.text
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        'INSERT INTO orders (user_id, username, full_name, service, details) VALUES (?, ?, ?, ?, ?)',
+        (message.from_user.id, message.from_user.username or '', message.from_user.full_name or '', service, details)
+    )
+    conn.commit()
+    order_id = cur.lastrowid
+    conn.close()
+
+    await message.answer(f"سفارش شما ثبت شد. شماره سفارش: #{order_id}\nما به زودی با شما تماس می‌گیریم.")
+
+    admin_text = (
+        f"سفارش جدید #{order_id}\n"
+        f"کاربر: {message.from_user.full_name} (@{message.from_user.username})\n"
+        f"خدمت: {service}\n"
+        f"جزئیات:\n{details}\n"
+    )
+    await bot.send_message(ADMIN_ID, admin_text)
+
+    await state.finish()
+
+@dp.message_handler(lambda m: m.from_user.id == ADMIN_ID and m.text == '/admin')
+async def cmd_admin(message: types.Message):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute('SELECT id, full_name, username, service, status, created_at FROM orders ORDER BY id DESC LIMIT 20')
+    rows = cur.fetchall()
+    conn.close()
+    if not rows:
+        await message.answer('سفارشی موجود نیست.')
+        return
+    text = 'آخرین سفارش‌ها:\n'
+    for r in rows:
+        text += f"#{r[0]} — {r[1]} (@{r[2]}) — {r[3]} — {r[4]} — {r[5]}\n"
+    await message.answer(text)
+
+@dp.message_handler(lambda m: m.from_user.id == ADMIN_ID and m.text and m.text.startswith('/setstatus'))
+async def cmd_setstatus(message: types.Message):
+    parts = message.text.split(maxsplit=2)
+    if len(parts) < 3:
+        await message.answer('استفاده: /setstatus <order_id> <new_status>')
+        return
+    order_id = parts[1]
+    new_status = parts[2]
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute('UPDATE orders SET status = ? WHERE id = ?', (new_status, order_id))
+    conn.commit()
+    conn.close()
+    await message.answer(f'وضعیت سفارش #{order_id} به "{new_status}" تغییر کرد.')
+
+@dp.message_handler(lambda m: m.from_user.id == ADMIN_ID and m.text and m.text.startswith('/msg'))
+async def cmd_msg_user(message: types.Message):
+    parts = message.text.split(maxsplit=2)
+    if len(parts) < 3:
+        await message.answer('استفاده: /msg <user_id> <text>')
+        return
+    user_id = int(parts[1])
+    text = parts[2]
+    try:
+        await bot.send_message(user_id, f'پیام از ادمین:\n{text}')
+        await message.answer('پیام ارسال شد.')
+    except Exception as e:
+        await message.answer(f'خطا در ارسال پیام: {e}')
+
+@dp.message_handler()
+async def echo_all(message: types.Message):
+    await message.answer('برای شروع /start را بزنید یا از منو استفاده کنید.', reply_markup=kb_main)
+
+if __name__ == '__main__':
+    print('Bot is starting...')
+    executor.start_polling(dp, skip_updates=True)
