@@ -34,12 +34,9 @@ def webhook():
                               "2️⃣ طراحی اپلیکیشن موبایل\n"
                               "3️⃣ طراحی رابط کاربری (UI/UX)\n"
                               "4️⃣ پروژه‌های پایتون و جاوااسکریپت\n\n"
-                              "برای سفارش، پیام بده: @Arena_Suppoort"
-                               "/kolye")
-     elif text == "/kolye":
-        send_message(chat_id,"فی هشتصد"
-                             "برای دیدن خدمات، دستور /services رو بفرست.")
-                           
+                              "برای سفارش، پیام بده: @Arena_Suppoort")
+    elif text == "/kolye":
+        send_message(chat_id, "فی هشتصد\nبرای دیدن خدمات، دستور /services رو بفرست.")
     else:
         send_message(chat_id, "❓ دستور ناشناخته! از /start استفاده کن.")
 
@@ -54,6 +51,3 @@ def home():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
-
-
