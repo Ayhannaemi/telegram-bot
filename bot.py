@@ -2,28 +2,37 @@ from flask import Flask, request
 import requests
 import os
 
+# -------------------------------
+# تنظیمات ربات
+# -------------------------------
 TOKEN = "8094291923:AAENXpm4aBXhIjIUx6_4tKuCKsiwmh9ssc8"
 URL = f"https://api.telegram.org/bot{TOKEN}/"
 ADMIN_ID = 1026455806  # آیدی عددی خودت
 
-# لینک زرین‌پال و Merchant
+# -------------------------------
+# تنظیمات زرین‌پال
+# -------------------------------
 ZARINPAL_MERCHANT = "d2678987-059b-4550-b1d8-09cb67883cf9"
-ZARINPAL_BASE = "https://www.zarinpal.com/pg/StartPay/"
-ZARINPAL_VERIFY = "https://www.zarinpal.com/pg/PaymentVerification.json"
+ZARINPAL_REQUEST = "https://api.zarinpal.com/pg/v4/payment/request.json"
+ZARINPAL_VERIFY = "https://api.zarinpal.com/pg/v4/payment/verify.json"
+ZARINPAL_START = "https://www.zarinpal.com/pg/StartPay/"
 
+# -------------------------------
+# اپلیکیشن و دیتاست
+# -------------------------------
 app = Flask(__name__)
-user_states = {}
+user_states = {}          # برای فرم سفارش
+pending_payments = {}     # chat_id: service_id
 
-# مبلغ ثابت خدمات
 SERVICE_PRICES = {
     "web": 3000000,
     "app": 5000000,
     "uiux": 1500000
 }
 
-# نگهداری وضعیت پرداخت‌ها
-pending_payments = {}  # chat_id: service_id
-
+# -------------------------------
+# ارسال پیام به کاربر
+# -------------------------------
 def send_message(chat_id, text, buttons=None, keyboard=None):
     payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
     if buttons:
@@ -36,11 +45,30 @@ def send_message(chat_id, text, buttons=None, keyboard=None):
         }
     requests.post(URL + "sendMessage", json=payload)
 
+# -------------------------------
+# ایجاد لینک پرداخت
+# -------------------------------
 def create_payment_link(chat_id, service_id):
     amount = SERVICE_PRICES[service_id]
-    pending_payments[chat_id] = service_id
-    return f"{ZARINPAL_BASE}{ZARINPAL_MERCHANT}?amount={amount}&callback_url=https://YOUR_DOMAIN.com/verify/{chat_id}"
+    # جایگزین کردن دامنه واقعی خودت
+    callback_url = f"https://YOUR_DOMAIN.com/verify/{chat_id}"
+    data = {
+        "merchant_id": ZARINPAL_MERCHANT,
+        "amount": amount,
+        "callback_url": callback_url,
+        "description": f"پرداخت خدمت {service_id}"
+    }
+    response = requests.post(ZARINPAL_REQUEST, json=data).json()
+    if response.get("data") and response["data"].get("authority"):
+        authority = response["data"]["authority"]
+        pending_payments[chat_id] = service_id
+        return ZARINPAL_START + authority
+    else:
+        return None
 
+# -------------------------------
+# وبهوک اصلی ربات
+# -------------------------------
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
     data = request.get_json()
@@ -58,6 +86,7 @@ def webhook():
             ["🧾 سفارش جدید"]
         ]
 
+        # فرم سفارش
         if chat_id in user_states:
             state = user_states[chat_id]
             if state["step"] == "name":
@@ -84,6 +113,7 @@ def webhook():
                 del user_states[chat_id]
             return "ok"
 
+        # دستورات عمومی
         if text == "/start":
             send_message(chat_id, "👋 سلام! خوش اومدی به <b>Arena PC</b>.\nاز منوی پایین یکی از گزینه‌ها رو انتخاب کن 👇",
                          keyboard=main_keyboard)
@@ -116,13 +146,18 @@ def webhook():
 
         if data_id in SERVICE_PRICES:
             link = create_payment_link(chat_id, data_id)
-            send_message(chat_id, f"💳 برای پرداخت خدمت <b>{data_id}</b>، روی لینک زیر کلیک کنید:\n{link}")
+            if link:
+                send_message(chat_id, f"💳 برای پرداخت خدمت <b>{data_id}</b>، روی لینک زیر کلیک کنید:\n{link}")
+            else:
+                send_message(chat_id, "❌ خطا در ساخت لینک پرداخت. دوباره امتحان کنید.")
         requests.post(URL + "answerCallbackQuery", json={"callback_query_id": query["id"]})
 
     return "ok"
 
+# -------------------------------
 # تایید پرداخت
-@app.route("/verify/<int:chat_id>", methods=["GET"])
+# -------------------------------
+@app.route("/verify/<int:chat_id>")
 def verify(chat_id):
     if chat_id not in pending_payments:
         return "❌ پرداخت نامعتبر یا تکراری"
@@ -130,12 +165,14 @@ def verify(chat_id):
     service_id = pending_payments[chat_id]
     amount = SERVICE_PRICES[service_id]
 
-    # اینجا باید درخواست واقعی به زرین‌پال بزنیم (نمونه فرضی)
-    # response = requests.post(ZARINPAL_VERIFY, json={"merchant_id": ZARINPAL_MERCHANT, "amount": amount})
-    # success = response.json().get("status") == 100
-    success = True  # فرض می‌کنیم پرداخت موفق است
-
-    if success:
+    authority = request.args.get("Authority")
+    data = {
+        "merchant_id": ZARINPAL_MERCHANT,
+        "amount": amount,
+        "authority": authority
+    }
+    response = requests.post(ZARINPAL_VERIFY, json=data).json()
+    if response.get("data", {}).get("code") == 100:
         send_message(chat_id, f"✅ پرداخت خدمت <b>{service_id}</b> با موفقیت انجام شد. با تشکر!")
         send_message(ADMIN_ID, f"💰 کاربر @{chat_id} پرداخت خدمت <b>{service_id}</b> را انجام داد.")
         del pending_payments[chat_id]
@@ -149,4 +186,3 @@ def home():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
