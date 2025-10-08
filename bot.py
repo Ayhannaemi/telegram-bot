@@ -105,11 +105,11 @@ def webhook():
             send_message(chat_id, "📞 راه‌های ارتباط:\n"
                                   "Telegram: @Arena_Suppoort\n"
                                   "Instagram: @arena_pc\n"
-                                  "Website: arenapc.ir")
+                                  "Website: arenapc.shop")
 
         elif text == "📂 نمونه کارها":
             send_message(chat_id, "📂 نمونه کارها:\n"
-                                  "🌐 arenapc.ir\n"
+                                  "🌐 arenapc.shop\n"
                                   "💼 instagram.com/arena_pc")
 
         else:
@@ -143,3 +143,4 @@ def home():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
