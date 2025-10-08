@@ -7,7 +7,7 @@ URL = f"https://api.telegram.org/bot{TOKEN}/"
 ADMIN_ID = 1026455806  # آیدی عددی خودت
 
 # لینک زرین‌پال و Merchant
-ZARINPAL_MERCHANT = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+ZARINPAL_MERCHANT = "d2678987-059b-4550-b1d8-09cb67883cf9"
 ZARINPAL_BASE = "https://www.zarinpal.com/pg/StartPay/"
 ZARINPAL_VERIFY = "https://www.zarinpal.com/pg/PaymentVerification.json"
 
@@ -149,3 +149,4 @@ def home():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
