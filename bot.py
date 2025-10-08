@@ -1,23 +1,19 @@
 from flask import Flask, request
 import requests
 import os
-import json
+import openai
 
 # -----------------------------
-# توکن ربات تلگرام
+# تنظیمات توکن تلگرام و ChatGPT
 # -----------------------------
-TOKEN = os.environ.get("BOT_TOKEN")  # یا توکن مستقیم: "8094291923:AAENXpm4aBXhIjIUx6_4tKuCKsiwmh9ssc8"
-URL = f"https://api.telegram.org/bot{TOKEN}/"
-
-# -----------------------------
-# کلید OpenAI (ChatGPT)
-# -----------------------------
-with open("/etc/secrets/openai_key.txt") as f:
+BOT_TOKEN = os.environ.get("BOT_TOKEN")  # توکن ربات تلگرام از Environment Variable
+with open("/etc/secrets/openai_key.txt") as f:  # کلید ChatGPT از Secret File
     OPENAI_API_KEY = f.read().strip()
 
-# -----------------------------
-# اپلیکیشن Flask
-# -----------------------------
+URL = f"https://api.telegram.org/bot{BOT_TOKEN}/"
+
+openai.api_key = OPENAI_API_KEY
+
 app = Flask(__name__)
 
 # -----------------------------
@@ -27,39 +23,18 @@ def send_message(chat_id, text):
     requests.post(URL + "sendMessage", data={"chat_id": chat_id, "text": text})
 
 # -----------------------------
-# پاسخ ChatGPT
+# پاسخ به پیام‌ها
 # -----------------------------
-def chatgpt_reply(user_message):
-    try:
-        headers = {
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        data = {
-            "model": "gpt-3.5-turbo",
-            "messages": [{"role": "user", "content": user_message}]
-        }
-        response = requests.post("https://api.openai.com/v1/chat/completions",
-                                 headers=headers, data=json.dumps(data))
-        result = response.json()
-        return result["choices"][0]["message"]["content"]
-    except Exception as e:
-        print("Error ChatGPT:", e)
-        return "⚠️ خطا در پاسخگویی ChatGPT."
-
-# -----------------------------
-# مسیر وب‌هوک
-# -----------------------------
-@app.route(f"/{TOKEN}", methods=["POST"])
+@app.route(f"/{BOT_TOKEN}", methods=["POST"])
 def webhook():
     data = request.get_json()
     if not data or "message" not in data:
         return "ok"
 
     chat_id = data["message"]["chat"]["id"]
-    text = data["message"]["get"]("text", "")
+    text = data["message"].get("text", "")
 
-    # دستورات آماده
+    # دستورهای ثابت ربات
     if text == "/start":
         send_message(chat_id, "👋 سلام! من ربات خدمات طراحی و برنامه‌نویسی هستم.\n"
                               "برای دیدن خدمات، دستور /services رو بفرست.")
@@ -71,19 +46,27 @@ def webhook():
                               "4️⃣ پروژه‌های پایتون و جاوااسکریپت\n\n"
                               "برای سفارش، پیام بده: @Arena_Suppoort")
     elif text == "/kolye":
-        send_message(chat_id, "فی هشتصد\nبرای دیدن خدمات، دستور /services رو بفرست.")
-    elif text.startswith("/gpt"):
-        # /gpt متن سوال
-        user_question = text.replace("/gpt", "").strip()
-        if user_question:
-            reply = chatgpt_reply(user_question)
-            send_message(chat_id, reply)
-        else:
-            send_message(chat_id, "لطفا بعد از /gpt سوال خودت رو تایپ کن.")
+        send_message(chat_id,"فی هشتصد\nبرای دیدن خدمات، دستور /services رو بفرست.")
+    elif text == "/contact":
+        send_message(chat_id,"📩 برای مشاوره با پشتیبانی: @Arena_Suppoort")
+    
+    # بخش ChatGPT (مشاوره آنلاین)
+    elif text.startswith("/chat "):
+        user_question = text.replace("/chat ", "", 1)
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": user_question}],
+                temperature=0.7,
+                max_tokens=500
+            )
+            answer = response.choices[0].message.content
+            send_message(chat_id, f"💬 پاسخ ChatGPT:\n{answer}")
+        except Exception as e:
+            send_message(chat_id, f"⚠️ خطا در پاسخگویی ChatGPT: {str(e)}")
+
     else:
-        # هر متن دیگه هم ChatGPT جواب بده
-        reply = chatgpt_reply(text)
-        send_message(chat_id, reply)
+        send_message(chat_id, "❓ دستور ناشناخته! از /start استفاده کن.")
 
     return "ok"
 
