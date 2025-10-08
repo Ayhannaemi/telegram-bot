@@ -55,7 +55,7 @@ def webhook():
         user_question = text.replace("/chat ", "", 1)
         try:
             response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
+                model="gpt-3.5-turbo",  # نسخه رایگان
                 messages=[{"role": "user", "content": user_question}],
                 temperature=0.7,
                 max_tokens=500
